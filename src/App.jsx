@@ -435,36 +435,113 @@ export default function KundliApp() {
   const [apiError, setApiError] = useState(null);
 
 
-  const generateKundli = () => {
-    setLoading(true);
-    setApiError(null);
-    setLoadingMsg("Calculating with Swiss Ephemeris precision...");
-    try {
-      const [y, m, d] = formData.dob.split("-").map(Number);
-      const [h, min] = formData.tob.split(":").map(Number);
+  const generateKundli = async () => {
+  setLoading(true);
+  setApiError(null);
+  setLoadingMsg("Fetching real astrology data...");
 
-      // Run full high-accuracy Vedic calculation (Meeus algorithms, Lahiri ayanamsa)
-      const calc = calcKundli(y, m, d, h, min, formData.lat, formData.lon);
+  try {
+    const [y, m, d] = formData.dob.split("-").map(Number);
+    const [h, min] = formData.tob.split(":").map(Number);
 
-      // Vimshottari Dasha from Moon's nakshatra position
-      const dashas = calcVimshottariDasha(calc.planets.Moon.longitude, new Date(formData.dob));
-      const currentDasha = getCurrentDasha(dashas);
-      const bsDate = adToBS(y, m, d);
-
-      setKundli({
-        ...calc,
-        dashas, currentDasha, bsDate,
-        formData: { ...formData },
+    const res = await fetch("/api/kundli", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        year: y,
+        month: m,
+        date: d,
+        hours: h,
+        minutes: min,
+        seconds: 0,
+        latitude: formData.lat,
+        longitude: formData.lon,
         timezone: getTimezone(formData.lat, formData.lon),
-      });
-      setPage("kundli");
-    } catch(e) {
-      console.error("Kundli calculation error:", e);
-      setApiError("Calculation error: " + e.message);
-    } finally {
-      setLoading(false);
-      setLoadingMsg("Calculating...");
+        name: formData.name,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || "Failed to generate kundli");
     }
+
+    const planets = {};
+    Object.entries(data.output[0]).forEach(([key, p]) => {
+      if (!p || !p.fullDegree) return;
+
+      const sign = Number(p.current_sign);
+
+      planets[p.name] = {
+        longitude: Number(p.fullDegree),
+        sign,
+        signName: SIGNS[sign],
+        signNp: SIGNS_NP[sign],
+        degree: Number(p.normDegree).toFixed(2),
+        nakshatra: p.nakshatra,
+        pada: p.nakshatra_pada,
+        isRetro: String(p.isRetro) === "true",
+        color: PLANET_COLORS[p.name],
+        symbol: PLANET_SYMBOLS[p.name],
+      };
+    });
+
+    const asc = Object.values(data.output[0]).find(p => p.name === "Ascendant");
+
+    const lagnaSign = Number(asc.current_sign);
+    const lagnaLon = Number(asc.fullDegree);
+
+    const houses = {};
+    for (let i = 1; i <= 12; i++) {
+      houses[i] = (lagnaSign + i - 1) % 12;
+    }
+
+    const planetInHouse = {};
+    for (let h = 1; h <= 12; h++) planetInHouse[h] = [];
+
+    Object.entries(planets).forEach(([name, p]) => {
+      for (let h = 1; h <= 12; h++) {
+        if (p.sign === houses[h]) {
+          planetInHouse[h].push(name);
+          break;
+        }
+      }
+    });
+
+    const dashas = calcVimshottariDasha(planets.Moon.longitude, new Date(formData.dob));
+    const currentDasha = getCurrentDasha(dashas);
+
+    const bsDate = adToBS(y, m, d);
+
+    setKundli({
+      planets,
+      houses,
+      planetInHouse,
+      lagna: lagnaLon,
+      lagnaSign,
+      lagnaSignName: SIGNS[lagnaSign],
+      lagnaSignNp: SIGNS_NP[lagnaSign],
+      lagnaDegree: (lagnaLon % 30).toFixed(2),
+      lagnaNakshatra: asc.nakshatra,
+      dashas,
+      currentDasha,
+      bsDate,
+      formData: { ...formData },
+      timezone: getTimezone(formData.lat, formData.lon),
+    });
+
+    setPage("kundli");
+
+  } catch (e) {
+    console.error(e);
+    setApiError(e.message);
+  } finally {
+    setLoading(false);
+    setLoadingMsg("Calculating...");
+  }
   };
 
   const fetchAI = async (section, prompt) => {
