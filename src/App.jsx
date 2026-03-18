@@ -783,7 +783,7 @@ function HomePage({ theme, formData, setFormData, generateKundli, loading, loadi
               )}
             </button>
             <div style={{fontSize:11, color:theme.muted, marginTop:10}}>
-              Powered by freeastrologyapi.com · Swiss Ephemeris · Lahiri Ayanamsa
+              Powered by freeastrologyapi.com · Prerit Bhandari
             </div>
           </div>
         </div>
