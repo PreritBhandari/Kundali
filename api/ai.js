@@ -1,9 +1,4 @@
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-  if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -20,7 +15,7 @@ export default async function handler(req, res) {
 
   try {
     const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
       {
         method: "POST",
         headers: {
@@ -29,9 +24,7 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify({
           systemInstruction: system
-            ? {
-                parts: [{ text: system }],
-              }
+            ? { parts: [{ text: system }] }
             : undefined,
           contents: [
             {
@@ -45,13 +38,13 @@ export default async function handler(req, res) {
     const data = await response.json();
 
     if (!response.ok) {
-      return res
-        .status(response.status)
-        .json({ error: data?.error?.message || "Gemini API error" });
+      return res.status(response.status).json({
+        error: data?.error?.message || "Gemini API error",
+      });
     }
 
     const text =
-      data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") ||
+      data?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") ||
       "No response";
 
     return res.status(200).json({ text });
