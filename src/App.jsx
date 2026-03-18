@@ -876,7 +876,7 @@ function KundliPage({ theme, kundli, formData, activeTab, setActiveTab, chartSty
           {label:"Moon Sign / Rashi", value:kundli.planets.Moon?.signName, icon:"☽"},
           {label:"Sun Sign", value:kundli.planets.Sun?.signName, icon:"☉"},
           {label:"Current Mahadasha", value:`${kundli.currentDasha?.mahadasha?.lord}`, icon:"⏳"},
-          {label:"Nakshatra", value:kundli.lagnaNakshatra, icon:"⭐"},
+          {label:"Nakshatra", value:kundli.planets.Moon.nakshatra, icon:"⭐"},
         ].map(item => (
           <div key={item.label} style={{display:"flex", flexDirection:"column", gap:2}}>
             <div style={{fontSize:11, color:theme.muted}}>{item.icon} {item.label}</div>
