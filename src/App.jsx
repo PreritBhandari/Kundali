@@ -433,6 +433,13 @@ export default function KundliApp() {
   const [savedKundlis, setSavedKundlis] = useState([]);
   const [activeDasha, setActiveDasha] = useState(null);
   const [apiError, setApiError] = useState(null);
+  const [anthropicKey, setAnthropicKey] = useState(() => {
+    try { return localStorage.getItem("anthropic_key") || ""; } catch { return ""; }
+  });
+  const saveAnthropicKey = (key) => {
+    setAnthropicKey(key);
+    try { localStorage.setItem("anthropic_key", key); } catch {}
+  };
 
   const generateKundli = () => {
     setLoading(true);
@@ -467,18 +474,59 @@ export default function KundliApp() {
   };
 
   const fetchAI = async (section, prompt) => {
+    if (!anthropicKey) {
+      setAiAnalysis(p => ({...p, [section]: "⚠️ Please add your Anthropic API key in the AI Analysis tab first."}));
+      return;
+    }
     setAiLoading(p => ({...p, [section]: true}));
-    try {
-      const res = await fetch("/api/claude", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
-    });
+    setAiAnalysis(p => ({...p, [section]: ""}));
+
+    const SYSTEM = "You are a master Vedic astrologer specializing in Nepali Jyotish tradition. Give insightful, practical, spiritually aware interpretations. Be conversational, warm, and specific. Use both English and occasional Nepali words (like Karma, Dharma, Graha, Rashi, etc.) naturally. Keep response to 3-4 paragraphs.";
+
+    // Primary: server-side proxy at /api/ai (avoids all CORS issues on Vercel)
+    const tryProxy = async () => {
+      const res = await fetch("/api/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: anthropicKey, prompt, system: SYSTEM })
+      });
       const data = await res.json();
-      const text = data.content?.map(c => c.text || "").join("") || "Analysis unavailable.";
-      setAiAnalysis(p => ({...p, [section]: text}));
+      if (!res.ok) throw new Error(data?.error || "Proxy error " + res.status);
+      return data.text;
+    };
+
+    // Fallback: direct browser call (works in local dev)
+    const tryDirect = async () => {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          system: SYSTEM,
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error?.message || "API error " + res.status);
+      return data.content?.map(c => c.text || "").join("") || "";
+    };
+
+    try {
+      let text = "";
+      try {
+        text = await tryProxy();
+      } catch {
+        text = await tryDirect();
+      }
+      setAiAnalysis(p => ({...p, [section]: text || "Analysis unavailable."}));
     } catch(e) {
-      setAiAnalysis(p => ({...p, [section]: "AI analysis temporarily unavailable. Please check your connection."}));
+      setAiAnalysis(p => ({...p, [section]: "❌ " + e.message + "\n\nCheck your API key at console.anthropic.com"}));
     }
     setAiLoading(p => ({...p, [section]: false}));
   };
@@ -514,7 +562,7 @@ export default function KundliApp() {
       `}</style>
 
       {page === "home" && <HomePage theme={theme} formData={formData} setFormData={setFormData} generateKundli={generateKundli} loading={loading} loadingMsg={loadingMsg} apiError={apiError} darkMode={darkMode} setDarkMode={setDarkMode} lang={lang} setLang={setLang} savedKundlis={savedKundlis} />}
-      {page === "kundli" && kundli && <KundliPage theme={theme} kundli={kundli} formData={formData} activeTab={activeTab} setActiveTab={setActiveTab} chartStyle={chartStyle} setChartStyle={setChartStyle} selectedPlanet={selectedPlanet} setSelectedPlanet={setSelectedPlanet} aiAnalysis={aiAnalysis} aiLoading={aiLoading} fetchAI={fetchAI} darkMode={darkMode} setDarkMode={setDarkMode} lang={lang} setLang={setLang} onBack={() => setPage("home")} activeDasha={activeDasha} setActiveDasha={setActiveDasha} />}
+      {page === "kundli" && kundli && <KundliPage theme={theme} kundli={kundli} formData={formData} activeTab={activeTab} setActiveTab={setActiveTab} chartStyle={chartStyle} setChartStyle={setChartStyle} selectedPlanet={selectedPlanet} setSelectedPlanet={setSelectedPlanet} aiAnalysis={aiAnalysis} aiLoading={aiLoading} fetchAI={fetchAI} anthropicKey={anthropicKey} saveAnthropicKey={saveAnthropicKey} darkMode={darkMode} setDarkMode={setDarkMode} lang={lang} setLang={setLang} onBack={() => setPage("home")} activeDasha={activeDasha} setActiveDasha={setActiveDasha} />}
     </div>
   );
 }
@@ -801,7 +849,7 @@ function HomePage({ theme, formData, setFormData, generateKundli, loading, loadi
 // KUNDLI MAIN PAGE
 // ═══════════════════════════════════════════
 
-function KundliPage({ theme, kundli, formData, activeTab, setActiveTab, chartStyle, setChartStyle, selectedPlanet, setSelectedPlanet, aiAnalysis, aiLoading, fetchAI, darkMode, setDarkMode, lang, setLang, onBack, activeDasha, setActiveDasha }) {
+function KundliPage({ theme, kundli, formData, activeTab, setActiveTab, chartStyle, setChartStyle, selectedPlanet, setSelectedPlanet, aiAnalysis, aiLoading, fetchAI, anthropicKey, saveAnthropicKey, darkMode, setDarkMode, lang, setLang, onBack, activeDasha, setActiveDasha }) {
   const TABS = [
     {id:"chart", label:"🧭 Chart"},
     {id:"planets", label:"🪐 Planets"},
@@ -863,7 +911,7 @@ function KundliPage({ theme, kundli, formData, activeTab, setActiveTab, chartSty
         {activeTab === "chart" && <ChartTab theme={theme} kundli={kundli} chartStyle={chartStyle} setChartStyle={setChartStyle} selectedPlanet={selectedPlanet} setSelectedPlanet={setSelectedPlanet} />}
         {activeTab === "planets" && <PlanetsTab theme={theme} kundli={kundli} selectedPlanet={selectedPlanet} setSelectedPlanet={setSelectedPlanet} />}
         {activeTab === "dasha" && <DashaTab theme={theme} kundli={kundli} activeDasha={activeDasha} setActiveDasha={setActiveDasha} />}
-        {activeTab === "analysis" && <AnalysisTab theme={theme} kundli={kundli} aiAnalysis={aiAnalysis} aiLoading={aiLoading} fetchAI={fetchAI} formData={formData} />}
+        {activeTab === "analysis" && <AnalysisTab theme={theme} kundli={kundli} aiAnalysis={aiAnalysis} aiLoading={aiLoading} fetchAI={fetchAI} formData={formData} anthropicKey={anthropicKey} saveAnthropicKey={saveAnthropicKey} />}
         {activeTab === "navamsa" && <NavamsaTab theme={theme} kundli={kundli} />}
         {activeTab === "panchang" && <PanchangTab theme={theme} kundli={kundli} />}
         {activeTab === "transits" && <TransitsTab theme={theme} kundli={kundli} />}
@@ -1358,7 +1406,9 @@ function DashaTab({ theme, kundli, activeDasha, setActiveDasha }) {
 // ANALYSIS TAB
 // ═══════════════════════════════════════════
 
-function AnalysisTab({ theme, kundli, aiAnalysis, aiLoading, fetchAI, formData }) {
+function AnalysisTab({ theme, kundli, aiAnalysis, aiLoading, fetchAI, formData, anthropicKey, saveAnthropicKey }) {
+  const [showKeyInput, setShowKeyInput] = useState(!anthropicKey);
+  const [keyDraft, setKeyDraft] = useState(anthropicKey || "");
   const sections = [
     {
       id: "personality",
@@ -1427,6 +1477,58 @@ function AnalysisTab({ theme, kundli, aiAnalysis, aiLoading, fetchAI, formData }
 
   return (
     <div className="fade-in" style={{display:"grid", gap:20}}>
+
+      {/* ── Anthropic API Key Banner ── */}
+      <div className="card" style={{padding:20, border:`1px solid ${anthropicKey ? theme.accent+"40" : "#ef444460"}`, background: anthropicKey ? theme.accent+"08" : "#ef444408"}}>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: showKeyInput ? 12 : 0}}>
+          <div style={{display:"flex", alignItems:"center", gap:10}}>
+            <span style={{fontSize:20}}>{anthropicKey ? "✅" : "🔑"}</span>
+            <div>
+              <div style={{fontWeight:600, fontSize:14, color: anthropicKey ? theme.accent : "#ef4444"}}>
+                {anthropicKey ? "Anthropic API Key configured" : "Anthropic API Key required for AI Analysis"}
+              </div>
+              {anthropicKey && <div style={{fontSize:12, color:theme.muted}}>Key ending in ...{anthropicKey.slice(-6)}</div>}
+            </div>
+          </div>
+          <button
+            onClick={() => setShowKeyInput(v => !v)}
+            style={{background:theme.card, border:`1px solid ${theme.border}`, color:theme.text, padding:"5px 12px", borderRadius:8, cursor:"pointer", fontSize:12}}
+          >
+            {showKeyInput ? "▲ Hide" : "✏️ " + (anthropicKey ? "Change" : "Add Key")}
+          </button>
+        </div>
+        {showKeyInput && (
+          <div>
+            <div style={{fontSize:12, color:theme.muted, marginBottom:8}}>
+              Get a free key at{" "}
+              <a href="https://console.anthropic.com" target="_blank" rel="noreferrer"
+                style={{color:theme.accent}}>console.anthropic.com</a>
+              {" "}→ API Keys → Create Key. Stored locally in your browser only.
+            </div>
+            <div style={{display:"flex", gap:8}}>
+              <input
+                type="password"
+                placeholder="sk-ant-api03-..."
+                value={keyDraft}
+                onChange={e => setKeyDraft(e.target.value)}
+                onKeyDown={e => { if(e.key==="Enter" && keyDraft.startsWith("sk-")) { saveAnthropicKey(keyDraft); setShowKeyInput(false); }}}
+                style={{flex:1, padding:"9px 12px", borderRadius:8, border:`1px solid ${theme.border}`, background:theme.card, color:theme.text, fontSize:13, fontFamily:"monospace"}}
+              />
+              <button
+                onClick={() => { if(keyDraft.startsWith("sk-")) { saveAnthropicKey(keyDraft); setShowKeyInput(false); } }}
+                disabled={!keyDraft.startsWith("sk-")}
+                style={{background: keyDraft.startsWith("sk-") ? theme.accent : theme.border, border:"none", color:"#000", padding:"9px 18px", borderRadius:8, cursor:"pointer", fontWeight:600, fontSize:13}}
+              >
+                Save
+              </button>
+            </div>
+            {keyDraft && !keyDraft.startsWith("sk-") && (
+              <div style={{color:"#ef4444", fontSize:12, marginTop:6}}>Key should start with "sk-ant-..."</div>
+            )}
+          </div>
+        )}
+      </div>
+
       {sections.map(section => (
         <div key={section.id} className="card" style={{padding:24}}>
           <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16}}>
@@ -1435,8 +1537,12 @@ function AnalysisTab({ theme, kundli, aiAnalysis, aiLoading, fetchAI, formData }
               <span style={{color:theme.accent}}>{section.title}</span>
             </h3>
             {!aiAnalysis[section.id] && (
-              <button onClick={() => fetchAI(section.id, section.prompt)} disabled={aiLoading[section.id]} style={{background:`linear-gradient(135deg, ${theme.accent2}, ${theme.accent})`, border:"none", color:"#fff", padding:"8px 16px", borderRadius:8, cursor:"pointer", fontSize:13, fontFamily:"inherit", display:"flex", alignItems:"center", gap:6}}>
-                {aiLoading[section.id] ? <><span className="spin" style={{display:"inline-block"}}>⟳</span> Analyzing...</> : "🤖 Get AI Analysis"}
+              <button
+                onClick={() => anthropicKey ? fetchAI(section.id, section.prompt) : setShowKeyInput(true)}
+                disabled={aiLoading[section.id]}
+                style={{background: anthropicKey ? `linear-gradient(135deg, ${theme.accent2}, ${theme.accent})` : "#ef4444", border:"none", color:"#fff", padding:"8px 16px", borderRadius:8, cursor:"pointer", fontSize:13, fontFamily:"inherit", display:"flex", alignItems:"center", gap:6}}
+              >
+                {aiLoading[section.id] ? <><span className="spin" style={{display:"inline-block"}}>⟳</span> Analyzing...</> : anthropicKey ? "🤖 Get AI Analysis" : "🔑 Add API Key first"}
               </button>
             )}
           </div>
@@ -1451,9 +1557,9 @@ function AnalysisTab({ theme, kundli, aiAnalysis, aiLoading, fetchAI, formData }
           {aiAnalysis[section.id] && (
             <div className="fade-in">
               <div style={{lineHeight:1.8, color:theme.text, fontSize:15, whiteSpace:"pre-wrap"}}>{aiAnalysis[section.id]}</div>
-              <button onClick={() => fetchAI(section.id, section.prompt)} style={{marginTop:16, background:"none", border:`1px solid ${theme.border}`, color:theme.muted, padding:"6px 14px", borderRadius:8, cursor:"pointer", fontSize:12}}>
+              {anthropicKey && <button onClick={() => fetchAI(section.id, section.prompt)} style={{marginTop:16, background:"none", border:`1px solid ${theme.border}`, color:theme.muted, padding:"6px 14px", borderRadius:8, cursor:"pointer", fontSize:12}}>
                 🔄 Regenerate
-              </button>
+              </button>}
             </div>
           )}
           
