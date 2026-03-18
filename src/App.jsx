@@ -469,16 +469,11 @@ export default function KundliApp() {
   const fetchAI = async (section, prompt) => {
     setAiLoading(p => ({...p, [section]: true}));
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: `You are a master Vedic astrologer specializing in Nepali Jyotish tradition. Give insightful, practical, spiritually aware interpretations. Be conversational, warm, and specific. Use both English and occasional Nepali words (like Karma, Dharma, Graha, Rashi, etc.) naturally. Keep response to 3-4 paragraphs.`,
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
+      const res = await fetch("/api/claude", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
       const data = await res.json();
       const text = data.content?.map(c => c.text || "").join("") || "Analysis unavailable.";
       setAiAnalysis(p => ({...p, [section]: text}));
